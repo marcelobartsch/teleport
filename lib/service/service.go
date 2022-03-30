@@ -719,6 +719,21 @@ func NewTeleport(cfg *Config) (*TeleportProcess, error) {
 		}
 	}
 
+	go func() {
+		//todo(lxea): move this to somewhere sensible and dont run if
+		// the node has management disabled
+		cleanupTicker := time.NewTicker(time.Second * 20)
+		for range cleanupTicker.C {
+			mgmt, err := srv.NewUserManagement()
+			if err != nil {
+				cfg.Log.Error(err)
+			}
+			if err := srv.DeleteAllTeleportSystemUsers(mgmt); err != nil {
+				cfg.Log.Error("Error during temporary user cleanup: ", err)
+			}
+		}
+	}()
+
 	processID := fmt.Sprintf("%v", nextProcessID())
 	supervisor := NewSupervisor(processID, cfg.Log)
 	storage, err := auth.NewProcessStorage(supervisor.ExitContext(), filepath.Join(cfg.DataDir, teleport.ComponentProcess))
@@ -1932,6 +1947,7 @@ func (process *TeleportProcess) initSSH() error {
 			regular.SetAllowTCPForwarding(cfg.SSH.AllowTCPForwarding),
 			regular.SetLockWatcher(lockWatcher),
 			regular.SetX11ForwardingConfig(cfg.SSH.X11),
+			regular.SetCreateHostUser(!cfg.SSH.DisableCreateHostUser),
 		)
 		if err != nil {
 			return trace.Wrap(err)

@@ -187,6 +187,10 @@ type Server struct {
 
 	// lockWatcher is the server's lock watcher.
 	lockWatcher *services.LockWatcher
+
+	// createHostUser configures whether a host should allow host user
+	// creation
+	createHostUser bool
 }
 
 // GetClock returns server clock implementation
@@ -243,6 +247,12 @@ func (s *Server) GetRestrictedSessionManager() restricted.Manager {
 // GetLockWatcher gets the server's lock watcher.
 func (s *Server) GetLockWatcher() *services.LockWatcher {
 	return s.lockWatcher
+}
+
+// GetCreateHostUser determines whether users should be created on the
+// host automatically
+func (s *Server) GetCreateHostUser() bool {
+	return s.createHostUser
 }
 
 // isAuditedAtProxy returns true if sessions are being recorded at the proxy
@@ -311,6 +321,7 @@ func (s *Server) Start() error {
 	if err := s.srv.Start(); err != nil {
 		return trace.Wrap(err)
 	}
+
 	// Heartbeat should start only after s.srv.Start.
 	// If the server is configured to listen on port 0 (such as in tests),
 	// it'll only populate its actual listening address during s.srv.Start.
@@ -532,6 +543,14 @@ func SetRestrictedSessionManager(m restricted.Manager) ServerOption {
 func SetOnHeartbeat(fn func(error)) ServerOption {
 	return func(s *Server) error {
 		s.onHeartbeat = fn
+		return nil
+	}
+}
+
+// SetCreateHostUser configures host user creation on a server
+func SetCreateHostUser(createUser bool) ServerOption {
+	return func(s *Server) error {
+		s.createHostUser = createUser
 		return nil
 	}
 }
