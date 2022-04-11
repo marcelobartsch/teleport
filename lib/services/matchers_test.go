@@ -19,12 +19,12 @@ package services
 import (
 	"testing"
 
+	"github.com/google/uuid"
+	"github.com/gravitational/trace"
+	"github.com/stretchr/testify/require"
+
 	"github.com/gravitational/teleport/api/types"
 	"github.com/gravitational/teleport/lib/defaults"
-	"github.com/gravitational/trace"
-
-	"github.com/google/uuid"
-	"github.com/stretchr/testify/require"
 )
 
 // TestMatchResourceLabels tests matching a resource against a selector.
@@ -115,7 +115,42 @@ func TestMatchResourceLabels(t *testing.T) {
 				{Labels: types.Labels{"cluster": []string{"root"}}},
 			},
 			databaseLabels: map[string]string{"cluster": "root"},
-			match:          true,
+			match:          false,
+		},
+		{
+			description: "wildcard should match all labels",
+			selectors: []ResourceMatcher{
+				{Labels: types.Labels{types.Wildcard: []string{types.Wildcard}}},
+			},
+			databaseLabels: map[string]string{
+				"cluster": "root",
+				"account": "acc1",
+			},
+			match: true,
+		},
+		{
+			description: "all labels should match fail",
+			selectors: []ResourceMatcher{
+				{Labels: types.Labels{"cluster": []string{"dev"}}},
+				{Labels: types.Labels{"account": []string{"acc2"}}},
+			},
+			databaseLabels: map[string]string{
+				"cluster": "root",
+				"account": "acc1",
+			},
+			match: false,
+		},
+		{
+			description: "all labels should match pass",
+			selectors: []ResourceMatcher{
+				{Labels: types.Labels{"cluster": []string{"dev"}}},
+				{Labels: types.Labels{"account": []string{"acc2"}}},
+			},
+			databaseLabels: map[string]string{
+				"cluster": "root",
+				"account": "acc2",
+			},
+			match: false,
 		},
 	}
 

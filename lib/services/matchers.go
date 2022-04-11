@@ -17,10 +17,10 @@ limitations under the License.
 package services
 
 import (
-	"github.com/gravitational/teleport/api/types"
 	"github.com/gravitational/trace"
-
 	"github.com/sirupsen/logrus"
+
+	"github.com/gravitational/teleport/api/types"
 )
 
 // ResourceMatcher matches cluster resources.
@@ -39,23 +39,26 @@ type AWSMatcher struct {
 	Tags types.Labels
 }
 
-// MatchResourceLabels returns true if any of the provided selectors matches the provided database.
+// MatchResourceLabels returns true if all of provided ResourceMatchers matches database resource.
 func MatchResourceLabels(matchers []ResourceMatcher, resource types.ResourceWithLabels) bool {
+	match := false
+	var err error
 	for _, matcher := range matchers {
 		if len(matcher.Labels) == 0 {
 			return false
 		}
-		match, _, err := MatchLabels(matcher.Labels, resource.GetAllLabels())
+		match, _, err = MatchLabels(matcher.Labels, resource.GetAllLabels())
 		if err != nil {
 			logrus.WithError(err).Errorf("Failed to match labels %v: %v.",
 				matcher.Labels, resource)
 			return false
 		}
-		if match {
-			return true
+
+		if !match {
+			return false
 		}
 	}
-	return false
+	return match
 }
 
 // MatchResourceByFilters returns true if all filter values given matched against the resource.
