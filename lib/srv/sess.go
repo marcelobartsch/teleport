@@ -578,8 +578,7 @@ func (s *session) Stop() {
 	// Set session state to terminated
 	s.stateUpdate.L.Lock()
 	defer s.stateUpdate.L.Unlock()
-	s.state = types.SessionState_SessionStateTerminated
-	s.stateUpdate.Broadcast()
+
 	err := s.trackerUpdateState(types.SessionState_SessionStateTerminated)
 	if err != nil {
 		s.log.Warnf("Failed to set tracker state to %v", types.SessionState_SessionStateTerminated)
@@ -836,16 +835,15 @@ func (s *session) setEndingContext(ctx *ServerContext) {
 func (s *session) launch(ctx *ServerContext) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.stateUpdate.L.Lock()
-	defer s.stateUpdate.L.Unlock()
 
 	s.log.Debugf("Launching session %v.", s.id)
 	s.BroadcastMessage("Connecting to %v over SSH", ctx.srv.GetInfo().GetHostname())
-	s.state = types.SessionState_SessionStateRunning
 
 	s.io.On()
 
-	s.stateUpdate.Broadcast()
+	s.stateUpdate.L.Lock()
+	defer s.stateUpdate.L.Unlock()
+
 	err := s.trackerUpdateState(types.SessionState_SessionStateRunning)
 	if err != nil {
 		s.log.Warnf("Failed to set tracker state to %v", types.SessionState_SessionStateRunning)
@@ -1206,8 +1204,6 @@ func (s *session) removeParty(p *party) error {
 			return nil
 		}
 
-		s.state = types.SessionState_SessionStatePending
-		s.stateUpdate.Broadcast()
 		err := s.trackerUpdateState(types.SessionState_SessionStatePending)
 		if err != nil {
 			s.log.Warnf("Failed to set tracker state to %v", types.SessionState_SessionStatePending)
@@ -1495,8 +1491,10 @@ func (s *session) addParty(p *party, mode types.SessionParticipantMode) error {
 					}
 				}()
 			} else {
-				s.state = types.SessionState_SessionStateRunning
-				s.stateUpdate.Broadcast()
+				err := s.trackerUpdateState(types.SessionState_SessionStateRunning)
+				if err != nil {
+					s.log.Warnf("Failed to set tracker state to %v", types.SessionState_SessionStateRunning)
+				}
 			}
 		} else if !s.started {
 			base := "Waiting for required participants..."
@@ -1667,7 +1665,6 @@ func (s *session) trackerCreate(teleportUser string, policySet []*types.SessionT
 		ClusterName:  s.scx.ClusterName,
 		Login:        "root",
 		Initiator:    initator,
-		Expires:      time.Now().UTC().Add(time.Hour * 24),
 		HostUser:     initator.User,
 		Reason:       reason,
 		Invited:      invited,
@@ -1675,7 +1672,27 @@ func (s *session) trackerCreate(teleportUser string, policySet []*types.SessionT
 	}
 
 	_, err := s.registry.auth.CreateSessionTracker(s.serverCtx, req)
-	return trace.Wrap(err)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+
+	// Start go routine to push back session expiration while session is still active.
+	go func() {
+		ticker := s.scx.srv.GetClock().NewTicker(defaults.SessionTrackerExpirationUpdateInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case time := <-ticker.Chan():
+				if err := s.trackerUpdateExpiry(time.Add(defaults.SessionTrackerTTL)); err != nil {
+					s.log.WithError(err).Warningf("Failed to update session tracker expiration.")
+				}
+			case <-s.stopC:
+				return
+			}
+		}
+	}()
+
+	return nil
 }
 
 func (s *session) trackerAddParticipant(participant *party) error {
@@ -1721,7 +1738,11 @@ func (s *session) trackerRemoveParticipant(participantID string) error {
 	return trace.Wrap(err)
 }
 
+// trackerUpdateState should occur under session.stateUpdate.Lock
 func (s *session) trackerUpdateState(state types.SessionState) error {
+	s.state = state
+	s.stateUpdate.Broadcast()
+
 	if s.registry.auth == nil {
 		return nil
 	}
@@ -1731,6 +1752,24 @@ func (s *session) trackerUpdateState(state types.SessionState) error {
 		Update: &proto.UpdateSessionTrackerRequest_UpdateState{
 			UpdateState: &proto.SessionTrackerUpdateState{
 				State: state,
+			},
+		},
+	}
+
+	err := s.registry.auth.UpdateSessionTracker(s.serverCtx, req)
+	return trace.Wrap(err)
+}
+
+func (s *session) trackerUpdateExpiry(expires time.Time) error {
+	if s.registry.auth == nil {
+		return nil
+	}
+
+	req := &proto.UpdateSessionTrackerRequest{
+		SessionID: s.id.String(),
+		Update: &proto.UpdateSessionTrackerRequest_UpdateExpiry{
+			UpdateExpiry: &proto.SessionTrackerUpdateExpiry{
+				Expires: &expires,
 			},
 		},
 	}
