@@ -21,6 +21,7 @@ import (
 	"crypto/x509"
 
 	"github.com/gravitational/teleport"
+	"github.com/gravitational/teleport/api/breaker"
 	"github.com/gravitational/teleport/api/client"
 	"github.com/gravitational/teleport/api/client/proto"
 	"github.com/gravitational/teleport/api/metadata"
@@ -343,6 +344,7 @@ func insecureRegisterClient(params RegisterParams) (*Client, error) {
 		Credentials: []client.Credentials{
 			client.LoadTLS(tlsConfig),
 		},
+		BreakerConfig: breaker.Config{Clock: params.Clock},
 	})
 	if err != nil {
 		return nil, trace.Wrap(err)
@@ -381,6 +383,7 @@ func pinRegisterClient(params RegisterParams) (*Client, error) {
 		Credentials: []client.Credentials{
 			client.LoadTLS(tlsConfig),
 		},
+		BreakerConfig: breaker.Config{Clock: params.Clock},
 	})
 	if err != nil {
 		return nil, trace.Wrap(err)
@@ -431,6 +434,7 @@ func pinRegisterClient(params RegisterParams) (*Client, error) {
 		Credentials: []client.Credentials{
 			client.LoadTLS(tlsConfig),
 		},
+		BreakerConfig: breaker.Config{Clock: params.Clock},
 	})
 	if err != nil {
 		return nil, trace.Wrap(err)
