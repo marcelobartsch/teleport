@@ -692,7 +692,7 @@ func (s *session) emitSessionStartEvent(ctx *ServerContext) {
 
 // emitSessionJoinEvent emits a session join event to both the Audit Log as
 // well as sending a "x-teleport-event" global request on the SSH connection.
-// Occurs under session lock.
+// Must be called under session Lock.
 func (s *session) emitSessionJoinEvent(ctx *ServerContext) {
 	sessionJoinEvent := &apievents.SessionJoin{
 		Metadata: apievents.Metadata{
@@ -744,7 +744,7 @@ func (s *session) emitSessionJoinEvent(ctx *ServerContext) {
 
 // emitSessionLeaveEvent emits a session leave event to both the Audit Log as
 // well as sending a "x-teleport-event" global request on the SSH connection.
-// Occurs under session lock.
+// Must be called under session Lock.
 func (s *session) emitSessionLeaveEvent(ctx *ServerContext) {
 	sessionLeaveEvent := &apievents.SessionLeave{
 		Metadata: apievents.Metadata{
@@ -788,7 +788,7 @@ func (s *session) emitSessionLeaveEvent(ctx *ServerContext) {
 }
 
 // emitSessionEndEvent emits a session end event.
-// Occurs under session lock.
+// Must be called under session Lock.
 func (s *session) emitSessionEndEvent() {
 	ctx := s.scx
 	if s.endingContext != nil {
@@ -1185,7 +1185,7 @@ func (s *session) removePartyMember(party *party) {
 // removeParty removes the party from the in-memory map that holds all party members
 // and closes their underlying ssh channels. This may also trigger the session to end
 // if the party is the last in the session or has policies that dictate it to end.
-// Occurs under session lock.
+// Must be called under session Lock.
 func (s *session) removeParty(p *party) error {
 	p.ctx.Infof("Removing party %v from session %v", p, s.id)
 
@@ -1287,7 +1287,7 @@ func (s *session) getHostname() string {
 }
 
 // exportPartyMembers exports participants in the in-memory map of party
-// members. Occurs under a lock.
+// members.
 func (s *session) exportPartyMembers() []rsession.Party {
 	s.mu.Lock()
 	defer s.mu.Unlock()
