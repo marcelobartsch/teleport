@@ -813,12 +813,21 @@ func (s *session) emitSessionEndEvent() {
 			SessionID: string(s.id),
 		},
 		UserMetadata:      ctx.Identity.GetUserMetadata(),
-		Participants:      s.exportParticipants(),
 		EnhancedRecording: s.hasEnhancedRecording,
 		Interactive:       s.term != nil,
 		StartTime:         start,
 		EndTime:           end,
 		SessionRecording:  ctx.SessionRecordingConfig.GetMode(),
+	}
+
+	for _, p := range s.participants {
+		sessionEndEvent.Participants = append(sessionEndEvent.Participants, p.user)
+	}
+
+	// If there are 0 participants, this is an exec session.
+	// Use the user from the session context.
+	if len(s.participants) == 0 {
+		sessionEndEvent.Participants = []string{s.scx.Identity.TeleportUser}
 	}
 
 	if err := s.recorder.EmitAuditEvent(ctx.srv.Context(), sessionEndEvent); err != nil {
@@ -1253,7 +1262,7 @@ func (s *session) isStopped() bool {
 func (s *session) lingerAndDie(party *party) {
 	s.log.Debugf("Session %v has no active party members.", s.id)
 
-	time.Sleep(s.GetLingerTTL())
+	s.scx.srv.GetClock().Sleep(s.GetLingerTTL())
 	if len(s.getParties()) != 0 {
 		s.log.Infof("Session %v has become active again.", s.id)
 		return
@@ -1295,22 +1304,6 @@ func (s *session) exportPartyMembers() []rsession.Party {
 	}
 
 	return partyList
-}
-
-// exportParticipants returns a list of all members that joined the party.
-func (s *session) exportParticipants() []string {
-	// If there are 0 participants, this is an exec session.
-	// Use the user from the session context.
-	if len(s.participants) == 0 {
-		return []string{s.scx.Identity.TeleportUser}
-	}
-
-	var participants []string
-	for _, p := range s.participants {
-		participants = append(participants, p.user)
-	}
-
-	return participants
 }
 
 // heartbeat will loop as long as the session is not closed and mark it as
