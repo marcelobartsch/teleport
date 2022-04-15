@@ -189,6 +189,8 @@ tls:
 image: quay.io/gravitational/teleport
 # Enterprise version of the image
 enterpriseImage: quay.io/gravitational/teleport-ent
+# Teleport Kubernetes Operator image
+operatorImage: quay.io/gravitational/teleport-operator
 # Teleport logging configuration
 log:
   # Log level for the Teleport process.

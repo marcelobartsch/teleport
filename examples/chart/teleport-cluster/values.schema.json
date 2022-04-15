@@ -12,6 +12,7 @@
         "tls",
         "image",
         "enterpriseImage",
+        "operator",
         "log",
         "affinity",
         "annotations",
@@ -336,6 +337,11 @@
             "$id": "#/properties/enterpriseImage",
             "type": "string",
             "default": "quay.io/gravitational/teleport-ent"
+        },
+        "operator: {
+            "$id": "#/properties/operatorImage",
+            "type": "string",
+            "default": "quay.io/gravitational/teleport-operator"
         },
         "logLevel": {
             "$id": "#/properties/logLevel",
