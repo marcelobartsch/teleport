@@ -68,6 +68,7 @@ func (a *Server) getOIDCClient(conn types.OIDCConnector) (*oidc.Client, error) {
 	}
 
 	delete(a.oidcClients, conn.GetName())
+	clientPack.cancel()
 	return nil, trace.NotFound("connector %v has updated the configuration and is invalidated", conn.GetName())
 
 }
@@ -79,26 +80,31 @@ func (a *Server) createOIDCClient(conn types.OIDCConnector) (*oidc.Client, error
 		return nil, trace.Wrap(err)
 	}
 
-	doneSyncing := make(chan struct{})
+	ctx, cancel := context.WithCancel(a.closeCtx)
+	firstSync := make(chan struct{})
 	go func() {
-		defer close(doneSyncing)
-		client.SyncProviderConfig(conn.GetIssuerURL())
+		stop := client.SyncProviderConfig(conn.GetIssuerURL())
+		close(firstSync)
+		<-ctx.Done()
+		close(stop)
 	}()
 
 	select {
-	case <-doneSyncing:
+	case <-firstSync:
 	case <-time.After(defaults.WebHeadersTimeout):
+		cancel()
 		return nil, trace.ConnectionProblem(nil,
 			"timed out syncing oidc connector %v, ensure URL %q is valid and accessible and check configuration",
 			conn.GetName(), conn.GetIssuerURL())
 	case <-a.closeCtx.Done():
+		cancel() // to appease the "lostcancel" linter
 		return nil, trace.ConnectionProblem(nil, "auth server is shutting down")
 	}
 
 	a.lock.Lock()
 	defer a.lock.Unlock()
 
-	a.oidcClients[conn.GetName()] = &oidcClient{client: client, config: config}
+	a.oidcClients[conn.GetName()] = &oidcClient{client: client, config: config, cancel: cancel}
 
 	return client, nil
 }
