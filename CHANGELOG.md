@@ -18,7 +18,12 @@ https://goteleport.com/docs/setup/reference/backends/#postgresqlcockroachdb-prev
 
 ### Server-side filtering and pagination
 
-// TODO
+Searching and filtering resources is now handled on the server, improving the
+efficiency of queries with `tsh`, `tctl`, or the web UI.
+
+The web UI loads resources faster by leveraging server-side pagination.
+Additionally, the web UI supports bookmarking searches by including the query in
+the URL.
 
 ### Other improvements and fixes
 
