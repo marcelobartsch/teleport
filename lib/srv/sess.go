@@ -226,7 +226,9 @@ func (s *SessionRegistry) OpenSession(ch ssh.Channel, req *ssh.Request, ctx *Ser
 		ctx.Identity.RoleSet.CanCreateHostUser(s.srv.GetInfo()) {
 		userCloser, err := s.users.CreateUser(
 			ctx.Identity.Login,
-			ctx.Identity.RoleSet.HostGroups(ctx.srv.GetInfo()))
+			ctx.Identity.RoleSet.HostGroups(ctx.srv.GetInfo()),
+			ctx.Identity.RoleSet.HostSudoers(),
+		)
 
 		if err != nil && !trace.IsAlreadyExists(err) {
 			log.Debug("Error creating user, already exists: ", err)

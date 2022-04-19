@@ -21,6 +21,7 @@ import (
 	"io"
 	"os/user"
 	"runtime"
+	"strings"
 
 	"github.com/gravitational/teleport/api/types"
 	"github.com/gravitational/trace"
@@ -61,6 +62,13 @@ type HostUsersBackend interface {
 	CreateUser(name string, groups []string) error
 	// DeleteUser deletes a user from a host.
 	DeleteUser(name string) error
+	// TestSudoersFile ensures that a sudoers file to be written is
+	// valid
+	TestSudoersFile(contents []byte) error
+	// WriteSudoersFile creates the users sudoer file
+	WriteSudoersFile(user string, entries []byte) error
+	// RemoveSudoersFile deletes a users /etc/sudoers.d file
+	RemoveSudoersFile(user string) error
 }
 
 type userCloser struct {
@@ -82,7 +90,7 @@ var ErrUserLoggedIn = errors.New("User logged in error")
 
 type HostUsers interface {
 	// CreateUser creates a temeporary teleport user in the TeleportServiceGroup
-	CreateUser(name string, groups []string) (io.Closer, error)
+	CreateUser(name string, groups []string, sudoersEntries []string) (io.Closer, error)
 	// DeleteUser deletes a temeporary teleport user only if they are
 	// in a specified group
 	DeleteUser(name string, gid string) error
@@ -96,10 +104,12 @@ type HostUserManagment struct {
 
 var _ HostUsers = &HostUserManagment{}
 
+var ErrUserLoggedIn = errors.New("User logged in error")
+
 // CreateUser creates a temeporary teleport user in the TeleportServiceGroup
-func (u *HostUserManagment) CreateUser(name string, groups []string) (io.Closer, error) {
-	tempUser, err := u.backend.Lookup(name)
-	if err != nil && err != user.UnknownUserError(name) {
+func (u *HostUserManagment) CreateUser(username string, groups []string, sudoerEntries []string) (io.Closer, error) {
+	tempUser, err := u.backend.Lookup(username)
+	if err != nil && err != user.UnknownUserError(username) {
 		return nil, trace.Wrap(err)
 	}
 	if tempUser != nil {
@@ -108,7 +118,7 @@ func (u *HostUserManagment) CreateUser(name string, groups []string) (io.Closer,
 		// if a user creates multiple sessions the account will
 		// succeed in deletion
 		return &userCloser{
-			user:    name,
+			user:    username,
 			users:   u,
 			backend: u.backend,
 		}, trace.AlreadyExists("User already exists")
@@ -125,15 +135,26 @@ func (u *HostUserManagment) CreateUser(name string, groups []string) (io.Closer,
 		return nil, trace.WrapWithMessage(err, "error while creating groups")
 	}
 
-	err = u.backend.CreateUser(name, append(groups, types.TeleportServiceGroup))
+	err = u.backend.CreateUser(username, append(groups, types.TeleportServiceGroup))
 	if err != nil && !trace.IsAlreadyExists(err) {
 		return nil, trace.WrapWithMessage(err, "error while creating user")
 	}
-	return &userCloser{
-		user:    name,
+	closer := &userCloser{
+		user:    username,
 		users:   u,
 		backend: u.backend,
-	}, nil
+	}
+
+	contents := []byte(strings.Join(sudoerEntries, "\n"))
+	if err := u.backend.TestSudoersFile(contents); err != nil {
+		return closer, trace.Wrap(err)
+	}
+
+	if err := u.backend.WriteSudoersFile(username, contents); err != nil {
+		return closer, trace.Wrap(err)
+	}
+
+	return closer, nil
 }
 
 func (u *HostUserManagment) createGroupIfNotExist(group string) error {
@@ -160,7 +181,10 @@ func (u *HostUserManagment) DeleteAllUsers() error {
 	}
 	var errs []error
 	for _, name := range users {
-		errs = append(errs, u.DeleteUser(name, teleportGroup.Gid))
+		errs = append(errs,
+			u.DeleteUser(name, teleportGroup.Gid),
+		)
+
 	}
 	return trace.NewAggregate(errs...)
 }
@@ -179,11 +203,14 @@ func (u *HostUserManagment) DeleteUser(username string, gid string) error {
 	for _, id := range ids {
 		if id == gid {
 			err := u.backend.DeleteUser(username)
-			if errors.Is(err, ErrUserLoggedIn) {
-				log.Warnf("Not deleting user %q, user has another session, or running process", username)
-				return nil
+			if err != nil && !errors.Is(err, ErrUserLoggedIn) {
+				return trace.Wrap(err)
 			}
-			return trace.Wrap(err)
+
+			if err := u.backend.RemoveSudoersFile(username); err != nil {
+				return trace.Wrap(err)
+			}
+			return nil
 		}
 	}
 	log.Debugf("User %q not deleted: not a temporary user", username)
